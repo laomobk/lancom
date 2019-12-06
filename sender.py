@@ -5,15 +5,20 @@ import os.path
 FILE_SIZE_DESC = 4
 FILE_NAME_DESC = 2
 SIGN = b'LANCOM'
+SHAKING_SIGN = b'HEYSENDER'
+ANSWER_SIGN = b'HEYRECEIVER'
 
 class Sender:
-    def __init__(self, file_ :io.BufferedReader, s_ip :str='127.0.0.1', s_port :int=1026):
+    def __init__(self, file_ :io.BufferedReader, s_ip :str='127.0.0.1', s_port :int=1026, initiative=True):
         self.__ip = s_ip
         self.__port = s_port
-        self.__socket = self.__init_socket()
+        self.__socket :socket.socket = None   \
+                if initiative else self.__init_socket()
         self.__file = file_
         self.__fileb = file_.read()
         self.__file_name :str= os.path.split(file_.name)[-1]
+
+        self.__isinitiative = initiative
 
     def __init_socket(self) -> socket.socket:
         soc = socket.socket()
@@ -53,7 +58,10 @@ class Sender:
 
         return result
 
-    def listen_and_send(self):
+    def __listen_and_send(self):
+        if self.__isinitiative:
+            raise Exception('This sender is in initiative mode!')
+
         try:
             self.__socket.listen(1)
 
@@ -69,9 +77,49 @@ class Sender:
             conn.close()
 
             print('finish!')
+        except KeyboardInterrupt:
+            pass
         finally:
             if conn : conn.close()
             self.__socket.close()
+
+    def connect_and_send(self):
+        if not self.__isinitiative:
+            raise Exception('This sender is in passive mode!')
+
+
+        try:
+            soc = socket.socket()
+            print('connecting to %s : %s ...' % (self.__ip, self.__port))
+            soc.connect((self.__ip, self.__port))
+            
+            print('Connected!')
+            print('shaking hands with receiver...')
+
+            # head shaking...
+            # receiver must send a sign text that means successfully shaking
+            # hands.
+            if soc.recv(len(SHAKING_SIGN)) != SHAKING_SIGN:
+                print('Failure to shake hands :(')
+                soc.close()
+                return
+
+            soc.send(ANSWER_SIGN)
+
+            print('Successfully shaking hands')
+            
+            print('sending file...')
+            soc.send(self.__get_file_bytes())
+
+            print('finish!')
+
+            soc.close()
+        except ConnectionRefusedError:
+            print('E: maybe receiver is not online')
+        finally:
+            soc.close()
+
+
 
 def main():
     import argparse
@@ -88,7 +136,7 @@ def main():
     f_name = nsp.file
 
     sender = Sender(open(f_name, 'rb'), s_ip=s_ip, s_port=s_port)
-    sender.listen_and_send()
+    sender.connect_and_send()
 
 
 if __name__ == '__main__':

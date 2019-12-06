@@ -1,10 +1,13 @@
 import socket
 import io
+import sys
 
 FILE_SIZE_DESC = 4
 EACH_BLOCK_SIZE = 1024  # (bytes)
 FILE_NAME_DESC = 2
 SIGN = b'LANCOM'
+SHAKING_SIGN = b'HEYSENDER'
+ANSWER_SIGN = b'HEYRECEIVER'
 
 def _print_progress_bar(total, now, length=10):
     layout = '[%s%s]'
@@ -17,19 +20,28 @@ def _print_progress_bar(total, now, length=10):
     print('\r%s' % res)
 
 class Receiver:
-    def __init__(self, s_ip :str='127.0.0.1', s_port :int=1026):
+    def __init__(self, s_ip :str='127.0.0.1', s_port :int=1026, standby_mode :bool=True):
         self.__ip = s_ip
         self.__port = s_port
-        self.__socket = self.__init_socket()
+        self.__socket = self.__init_socket()   \
+                        if not standby_mode else None
+
+        self.__standby_mode = standby_mode
+
+        self.__interior_call = False
 
     def __init_socket(self) -> socket.socket:
         soc = socket.socket()
         
-        print('connecting... %s : %s' % (self.__ip, self.__port))
-        soc.connect((self.__ip, self.__port))
-        print('Successfully connected to %s : %s' % (self.__ip, self.__port))
+        try:
+            print('connecting... %s : %s' % (self.__ip, self.__port))
+            soc.connect((self.__ip, self.__port))
+            print('Successfully connected to %s : %s' % (self.__ip, self.__port))
+            return soc
 
-        return soc
+        except ConnectionRefusedError:
+            print('E:  maybe sender is not online')
+            sys.exit(1)
 
     def __get_head(self) -> tuple:
         '''
@@ -46,9 +58,16 @@ class Receiver:
         fn = self.__socket.recv(fnlength).decode('UTF-8')
         
         return (fslength, fn)
-
+    
+    def __interior_receive_and_save(self):
+        self.__interior_call = True
+        self.receive_and_save()
+        self.__interior_call = False
 
     def receive_and_save(self, file_ :io.BufferedReader=None):
+        if self.__standby_mode and not self.__interior_call:
+            raise Exception('This receiver is in standby mode!')
+
         try:
             print('receiving from socket...')
 
@@ -97,6 +116,50 @@ class Receiver:
 
         return bf
 
+    def listen_and_receive(self):
+        if not self.__standby_mode:
+            raise Exception('This receiver is in initiative mode!')
+
+        server = socket.socket()
+        server.bind((self.__ip, self.__port))
+        server.listen(1)
+
+        tsk_c = 1
+
+        try:
+            while True:
+                print('--> Task %s' % tsk_c)
+                print('standby at %s : %s' % (self.__ip, self.__port))
+                conn, addr = server.accept()
+                self.__socket = conn
+                print('%s : %s connected!' % addr)
+
+                print('shaking hands with sender...')
+
+                # handshaking...
+                conn.send(SHAKING_SIGN)
+                
+                ans = conn.recv(len(ANSWER_SIGN))
+
+                if ans != ANSWER_SIGN:
+                    raise Exception('Failure to shake hands :(')
+
+                print('Successfully shaking hands!')
+
+                print()
+
+                self.__interior_receive_and_save()
+
+                print('\n')
+
+                tsk_c += 1
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if self.__socket : self.__socket.close()
+
+
+
 def main():
     import argparse
 
@@ -123,8 +186,8 @@ def main():
     
     EACH_BLOCK_SIZE = nsp.b
 
-    receiver = Receiver(s_ip=s_ip, s_port=s_port)
-    receiver.receive_and_save(f)
+    receiver = Receiver(s_ip=s_ip, s_port=s_port, standby_mode=True)
+    receiver.listen_and_receive()
     
     if f:
         f.close()
