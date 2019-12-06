@@ -78,7 +78,7 @@ class Receiver:
             
             fb = b''
             real_block_count = length // EACH_BLOCK_SIZE  # 完整BLOCK的数量
-            last_b = length - real_block_count  # 剩下最后的BLOCK的bytes
+            last_b = length - real_block_count * EACH_BLOCK_SIZE # 剩下最后的BLOCK的bytes
 
             for count in range(real_block_count):
                 print('[receiving] Block %s / %s\r' % (count+1, real_block_count), end='')
