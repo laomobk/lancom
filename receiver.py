@@ -59,12 +59,24 @@ class Receiver:
         self.receive_and_save()
         self.__interior_call = False
 
-    def __recv_block(self, length :int) -> bytes:
+    def __recv_block_by_recursion(self, length :int) -> bytes:
         b = self.__socket.recv(length)
 
         if len(b) != length:
             return b + self.__recv_block(length - len(b))  # 递归调用，直至接收完全
         return b
+
+    def __recv_block_by_iteration(self, length :int) -> bytes:
+        b = self.__socket.recv(length)
+        last_b = length - len(b)
+
+        while last_b > 0:
+            bf = self.__socket.recv(last_b)
+            last_b -= len(bf)
+            b += bf
+        return b
+
+    __recv_block = __recv_block_by_iteration
 
     def receive_and_save(self, file_ :io.BufferedReader=None):
         if self.__standby_mode and not self.__interior_call:

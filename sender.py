@@ -47,9 +47,9 @@ class Sender:
         }
         '''
 
-        fnlenb = self.__convert_filename_length_to_bytes(len(self.__file_name))
         szlenb = self.__convert_length_to_bytes(len(self.__fileb))
         fnb = self.__file_name.encode('UTF-8')
+        fnlenb = self.__convert_filename_length_to_bytes(len(fnb))
 
         result = SIGN + szlenb + fnlenb + fnb + self.__fileb
 
