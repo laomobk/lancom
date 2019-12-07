@@ -188,6 +188,7 @@ def main():
     if nsp.f:
         f = open(nsp.f, 'wb')
     
+    global EACH_BLOCK_SIZE
     EACH_BLOCK_SIZE = nsp.b
 
     receiver = Receiver(s_ip=s_ip, s_port=s_port, standby_mode=True)
