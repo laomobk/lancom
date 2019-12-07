@@ -130,10 +130,13 @@ def main():
     import argparse
     
     argp = argparse.ArgumentParser()
-    argp.add_argument('-p',type=int, default=4949)
-    argp.add_argument('-ip', default='127.0.0.1')
-    argp.add_argument('-w', action='store_true')
-    argp.add_argument('file')
+    argp.add_argument('-p', type=int, default=4949,
+            help='set port')
+    argp.add_argument('-ip', default='127.0.0.1',
+            help='set ip (IPv4) address')
+    argp.add_argument('-w', action='store_true',
+            help='wait for receiver finish')
+    argp.add_argument('file', help='the file to send')
 
     nsp = argp.parse_args()
 

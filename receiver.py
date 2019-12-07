@@ -187,8 +187,9 @@ def main():
     argp.add_argument('-p', type=int, help='port (default 4949)',
                         default=4949)
     argp.add_argument('-ip', help='IP address (default localhost)', default='127.0.0.1')
-    argp.add_argument('-f', help='filename', default=None)
-    argp.add_argument('-b',
+    argp.add_argument('-f', default=None,
+            help='save the file to a specific path')
+    argp.add_argument('-b', 
             help='each block size (byte) (default 1024)'
             , type=int,default=1024)
 
