@@ -59,6 +59,13 @@ class Receiver:
         self.receive_and_save()
         self.__interior_call = False
 
+    def __recv_block(self, length :int) -> bytes:
+        b = self.__socket.recv(length)
+
+        if len(b) != length:
+            return b + self.__recv_block(length - len(b))  # 递归调用，直至接收完全
+        return b
+
     def receive_and_save(self, file_ :io.BufferedReader=None):
         if self.__standby_mode and not self.__interior_call:
             raise Exception('This receiver is in standby mode!')
@@ -77,10 +84,10 @@ class Receiver:
 
             for count in range(real_block_count):
                 print('[receiving] Block %s / %s\r' % (count+1, real_block_count), end='')
-                fb += self.__socket.recv(EACH_BLOCK_SIZE)
+                fb += self.__recv_block(EACH_BLOCK_SIZE)
             else:
                 print('[receiving] Almost finish...')
-                fb += self.__socket.recv(last_b)
+                fb += self.__recv_block(last_b)
 
             total_bytes = len(fb) + FILE_SIZE_DESC
 
