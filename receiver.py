@@ -2,12 +2,7 @@ import socket
 import io
 import sys
 
-FILE_SIZE_DESC = 4
-EACH_BLOCK_SIZE = 1024  # (bytes)
-FILE_NAME_DESC = 2
-SIGN = b'LANCOM'
-SHAKING_SIGN = b'HEYSENDER'
-ANSWER_SIGN = b'HEYRECEIVER'
+from constants import *
 
 def _print_progress_bar(total, now, length=10):
     layout = '[%s%s]'
@@ -102,6 +97,8 @@ class Receiver:
 
             print('Successfully write %s bytes into \'%s\'' % (
                 total_bytes - FILE_SIZE_DESC, file_.name))
+            
+            self.__socket.send(RECEIVER_FINISH_SIGN)  # finish
         finally:
             self.__socket.close()
 

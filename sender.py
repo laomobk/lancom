@@ -1,12 +1,9 @@
 import socket
 import io
 import os.path
+import sys
 
-FILE_SIZE_DESC = 4
-FILE_NAME_DESC = 2
-SIGN = b'LANCOM'
-SHAKING_SIGN = b'HEYSENDER'
-ANSWER_SIGN = b'HEYRECEIVER'
+from constants import *
 
 class Sender:
     def __init__(self, file_ :io.BufferedReader, s_ip :str='127.0.0.1', s_port :int=1026, initiative=True):
@@ -83,7 +80,7 @@ class Sender:
             if conn : conn.close()
             self.__socket.close()
 
-    def connect_and_send(self):
+    def connect_and_send(self, wait=False):
         if not self.__isinitiative:
             raise Exception('This sender is in passive mode!')
 
@@ -111,7 +108,15 @@ class Sender:
             print('sending file...')
             soc.send(self.__get_file_bytes())
 
-            print('finish!')
+            if wait:
+                print('Waiting for receiver finish...')
+                if soc.recv(len(RECEIVER_FINISH_SIGN)) != RECEIVER_FINISH_SIGN:
+                    print('E: receiver may haven\'t finish...')
+                else:
+                    print('finish!')
+            
+            else:
+                print('finish!')
 
             soc.close()
         except ConnectionRefusedError:
@@ -127,6 +132,7 @@ def main():
     argp = argparse.ArgumentParser()
     argp.add_argument('-p',type=int, default=4949)
     argp.add_argument('-ip', default='127.0.0.1')
+    argp.add_argument('-w', action='store_true')
     argp.add_argument('file')
 
     nsp = argp.parse_args()
@@ -136,7 +142,7 @@ def main():
     f_name = nsp.file
 
     sender = Sender(open(f_name, 'rb'), s_ip=s_ip, s_port=s_port)
-    sender.connect_and_send()
+    sender.connect_and_send(nsp.w)
 
 
 if __name__ == '__main__':
