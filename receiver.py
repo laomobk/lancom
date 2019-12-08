@@ -1,8 +1,10 @@
 import socket
 import io
 import sys
+import os.path
 
 from constants import *
+from recv_config import *
 
 def _print_progress_bar(total, now, length=10):
     layout = '[%s%s]'
@@ -38,21 +40,38 @@ class Receiver:
             print('E:  maybe sender is not online')
             sys.exit(1)
 
+    def __get_file_path(self, filename :str) -> str:
+        if not os.path.exists(RECV_DIRECTORY):
+            os.mkdir(RECV_DIRECTORY)
+        return os.path.join(RECV_DIRECTORY, filename)
+
     def __get_head(self) -> tuple:
         '''
-        return (length, file_name)
+        return (block_count, block_size, tail_size, file_name)
+        return -1  : Unknown sign
+        
+        struct head_b {
+            6bytes sign_b,
+            4bytes block_count_b,
+            4bytes block_size_b,
+            8bytes tail_size_b
+            2bytes file_name_length_b,
+            bytes  file_name_b
+            }
         '''
         sign = self.__socket.recv(len(SIGN))
         
         # check sign
-        if sign != SIGN : raise Exception('Unknown sign!')
+        if sign != SIGN : return -1
 
-        fslength = int.from_bytes(self.__socket.recv(FILE_SIZE_DESC), 'big')
+        block_count = int.from_bytes(self.__socket.recv(BLOCK_COUNT_SIZE), 'big')
+        block_size = int.from_bytes(self.__socket.recv(BLOCK_SIZE_SIZE), 'big')
+        tail_size = int.from_bytes(self.__socket.recv(TAIL_SIZE_SIZE), 'big')
+
         fnlength = int.from_bytes(self.__socket.recv(FILE_NAME_DESC), 'big')
+        fname = self.__socket.recv(fnlength).decode('UTF-8')
         
-        fn = self.__socket.recv(fnlength).decode('UTF-8')
-        
-        return (fslength, fn)
+        return (block_count, block_size, tail_size, fname)
     
     def __interior_receive_and_save(self):
         self.__interior_call = True
@@ -85,37 +104,45 @@ class Receiver:
         try:
             print('receiving from socket...')
 
-            length, file_name = self.__get_head()
+            h = self.__get_head()
+            if h == -1:
+                print('E: Unknown sign')
+                return
+
+            block_count, block_size, tail_size, file_name = h
+            file_size = block_count * block_size + tail_size
             
-            print('file size = %s bytes' % length)
+            print('file size = %s bytes' % file_size)
             print('file name : %s' % file_name)
-            
-            fb = b''
-            real_block_count = length // EACH_BLOCK_SIZE  # 完整BLOCK的数量
-            last_b = length - real_block_count * EACH_BLOCK_SIZE # 剩下最后的BLOCK的bytes
 
-            for count in range(real_block_count):
-                print('[receiving] Block %s / %s\r' % (count+1, real_block_count), end='')
-                fb += self.__recv_block(EACH_BLOCK_SIZE)
-            else:
-                print('[receiving] Almost finish...')
-                fb += self.__recv_block(last_b)
-
-            total_bytes = len(fb) + FILE_SIZE_DESC
-
-            print('Successfully receive %s bytes' % (total_bytes))
-
-            if len(fb) != length:
-                print('A : The file may not be complete! \a')
+            fp = self.__get_file_path(file_name)
 
             if not file_:
-                file_ = open(file_name, 'wb')
+                file_ = open(fp, 'wb')
+
+            # receive the file
+
+            total_bytes = 0
+
+            for count in range(block_count):
+                fb = self.__recv_block(block_size)
+                file_.write(fb)
+                total_bytes += len(fb)
+
+                print('[receiving] Block %s / %s         \r' % (count + 1, block_count) ,end='')
             
-            print('writing to \'%s\'' % file_.name)
-            file_.write(fb)
+            else:
+                fb = self.__recv_block(tail_size)
+                file_.write(fb)
+                total_bytes += len(fb)
+
+                print('[receiving] Almost finish...      ')
+
+            if total_bytes != file_size:
+                print('A: The file may incomplete  actual = %s  received = %s' % (file_size, total_bytes))
 
             print('Successfully write %s bytes into \'%s\'' % (
-                total_bytes - FILE_SIZE_DESC, file_.name))
+                total_bytes, file_.name))
             
             self.__socket.send(RECEIVER_FINISH_SIGN)  # finish
         finally:
@@ -124,8 +151,31 @@ class Receiver:
     def just_receive(self) -> bytes:
         bf = b''
 
+        soc = socket.socket()
+        soc.bind((self.__ip, self.__port))
+        soc.listen(1)
+        
+        print('listening at %s : %s' % (self.__ip, self.__port))
+        conn, addr = soc.accept()
+
+        print('%s : %s connected!' % addr)
+        
+        print('shaking hands with sender...')
+
+        # handshaking...
+        conn.send(SHAKING_SIGN)
+        
+        ans = conn.recv(len(ANSWER_SIGN))
+
+        if ans != ANSWER_SIGN:
+            raise Exception('Failure to shake hands :(')
+
+        print('Successfully shaking hands!')
+
+        print('receiving...')
+
         while True:
-            tempb = self.__socket.recv(EACH_BLOCK_SIZE)
+            tempb = conn.recv(EACH_BLOCK_SIZE)
             if not tempb:
                 break
             bf += tempb
@@ -181,7 +231,10 @@ def main():
 
     # parse_argument
 
+    global RECV_DIRECTORY
+
     f = None
+    fp = RECV_DIRECTORY
 
     argp = argparse.ArgumentParser()
     argp.add_argument('-p', type=int, help='port (default 4949)',
@@ -190,8 +243,9 @@ def main():
     argp.add_argument('-f', default=None,
             help='save the file to a specific path')
     argp.add_argument('-b', 
-            help='each block size (byte) (default 1024)'
-            , type=int,default=1024)
+            help='each block size (byte) (default 8192)'
+            , type=int,default=8192)
+    argp.add_argument('-d', help='path to save')
 
     nsp = argp.parse_args()
     
@@ -200,6 +254,12 @@ def main():
 
     if nsp.f:
         f = open(nsp.f, 'wb')
+    if nsp.d:
+        if not os.path.isdir(nsp.d):
+            print('E: \'%s\' is not a directory!')
+            return
+
+        RECV_DIRECTORY = nsp.d
     
     global EACH_BLOCK_SIZE
     EACH_BLOCK_SIZE = nsp.b

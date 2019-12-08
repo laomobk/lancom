@@ -12,7 +12,7 @@ class Sender:
         self.__socket :socket.socket = None   \
                 if initiative else self.__init_socket()
         self.__file = file_
-        self.__fileb = file_.read()
+        self.__file_size = os.path.getsize(file_.name)
         self.__file_name :str= os.path.split(file_.name)[-1]
 
         self.__isinitiative = initiative
@@ -23,8 +23,17 @@ class Sender:
 
         return soc
 
+    def __get_block_desc(self) -> tuple:
+        '''
+        return (block_count, block_size, tail_size)
+        '''
+
+        return (self.__file_size // EACH_BLOCK_SIZE, 
+                EACH_BLOCK_SIZE,
+                self.__file_size % EACH_BLOCK_SIZE)
+
     def __convert_length_to_bytes(self, length :int) -> bytes:
-        print('file size = %s' % length)
+        #print('file size = %s' % length)
         if length >= 2 ** (FILE_SIZE_DESC * 8):
             raise OverflowError('file to large!')
 
@@ -36,24 +45,48 @@ class Sender:
 
         return int(length).to_bytes(FILE_NAME_DESC, 'big')
 
+    def __convert_number_to_bytes(self, size :int, value :int, describe :str) -> bytes:
+        if 2 ** (size * 8) < value:
+            raise OverflowError('%s to large!')
+        return int(value).to_bytes(size, 'big')
+
     def __get_file_bytes(self) -> bytes:
         '''
         struct file_b {
-            6bytes sign_b,
-            4bytes file_size_b,
-            2bytes file_name_length_b,
-            bytes  file_name_b
+            head_b head,
             bytes  file_content
         }
         '''
 
-        szlenb = self.__convert_length_to_bytes(len(self.__fileb))
+        head = self.__get_head_bytes()
+
+        return head + self.__fileb
+
+    def __get_head_bytes(self) -> bytes:
+        '''
+        struct head_b {
+            6bytes sign_b,
+            4bytes block_count_b,
+            4bytes block_size_b,
+            8bytes tail_size_b
+            2bytes file_name_length_b,
+            bytes  file_name_b
+        }
+        '''
+
+        block_c, block_s, tail_s = self.__get_block_desc()
+
+        blockc_b = self.__convert_number_to_bytes(BLOCK_COUNT_SIZE, block_c, 'block count')
+        blocks_b = self.__convert_number_to_bytes(BLOCK_SIZE_SIZE, block_s, 'block size')
+        tails_b  = self.__convert_number_to_bytes(TAIL_SIZE_SIZE, tail_s, 'tail size')
+
         fnb = self.__file_name.encode('UTF-8')
         fnlenb = self.__convert_filename_length_to_bytes(len(fnb))
 
-        result = SIGN + szlenb + fnlenb + fnb + self.__fileb
+        result = SIGN + blockc_b + blocks_b + tails_b + fnlenb + fnb
 
         return result
+
 
     def __listen_and_send(self):
         if self.__isinitiative:
@@ -69,7 +102,7 @@ class Sender:
             print('%s : %s connected !' % addr)
             print('sending file...')
 
-            conn.send(self.__get_file_bytes())
+            #conn.send(self.__get_file_bytes())
 
             conn.close()
 
@@ -83,7 +116,6 @@ class Sender:
     def connect_and_send(self, wait=False):
         if not self.__isinitiative:
             raise Exception('This sender is in passive mode!')
-
 
         try:
             soc = socket.socket()
@@ -104,9 +136,22 @@ class Sender:
             soc.send(ANSWER_SIGN)
 
             print('Successfully shaking hands')
+
+            # send a file
+            soc.send(self.__get_head_bytes())  # head first
+
+            # spilt file into a block size
+            block_c, block_s, tail_s = self.__get_block_desc()
             
             print('sending file...')
-            soc.send(self.__get_file_bytes())
+            print('file size = %s' % (self.__file_size))
+
+            for count in range(block_c):
+                soc.send(self.__file.read(block_s))
+                print('[sending] Block %s / %s     \r' % (count + 1, block_c), end='')
+            else:
+                soc.send(self.__file.read(tail_s))
+                print('[sending] almost finish...      ')
 
             if wait:
                 print('Waiting for receiver finish...')
