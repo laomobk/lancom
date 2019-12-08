@@ -242,9 +242,6 @@ def main():
     argp.add_argument('-ip', help='IP address (default localhost)', default='127.0.0.1')
     argp.add_argument('-f', default=None,
             help='save the file to a specific path')
-    argp.add_argument('-b', 
-            help='each block size (byte) (default 8192)'
-            , type=int,default=8192)
     argp.add_argument('-d', help='path to save')
 
     nsp = argp.parse_args()
@@ -256,13 +253,10 @@ def main():
         f = open(nsp.f, 'wb')
     if nsp.d:
         if not os.path.isdir(nsp.d):
-            print('E: \'%s\' is not a directory!')
+            print('E: \'%s\' is not a directory!' % nsp.d)
             return
 
         RECV_DIRECTORY = nsp.d
-    
-    global EACH_BLOCK_SIZE
-    EACH_BLOCK_SIZE = nsp.b
 
     receiver = Receiver(s_ip=s_ip, s_port=s_port, standby_mode=True)
     receiver.listen_and_receive()
